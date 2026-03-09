@@ -1,12 +1,392 @@
 <!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>培養上清液 在庫管理ダッシュボード</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>培養上清液 在庫管理ダッシュボード</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: 'Hiragino Sans', 'Meiryo', 'Segoe UI', sans-serif; }
+  .tab-btn.active { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+  table input, table select { width: 100%; border: none; background: transparent; padding: 4px 8px; font-size: 13px; }
+  table input:focus, table select:focus { outline: 2px solid #3b82f6; border-radius: 4px; background: #fff; }
+  .btn { padding: 6px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; border: none; }
+  .btn-blue { background: #3b82f6; color: #fff; } .btn-blue:hover { background: #2563eb; }
+  .btn-green { background: #10b981; color: #fff; } .btn-green:hover { background: #059669; }
+  .btn-red { background: #ef4444; color: #fff; } .btn-red:hover { background: #dc2626; }
+  .btn-gray { background: #e5e7eb; color: #374151; } .btn-gray:hover { background: #d1d5db; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .badge-blue { background: #dbeafe; color: #1d4ed8; }
+  .badge-green { background: #d1fae5; color: #047857; }
+  @media print { .no-print { display: none !important; } }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<header class="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 text-white px-6 py-5 shadow-lg">
+  <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">培養上清液 在庫管理ダッシュボード</h1>
+      <p class="text-blue-200 text-sm mt-1">発生主義会計連動 ・ リアルタイム在庫追跡 ・ データ編集可能</p>
+    </div>
+    <div class="flex gap-2 no-print">
+      <button onclick="exportData()" class="btn btn-green">📥 データ書き出し</button>
+      <label class="btn btn-gray cursor-pointer">📤 データ読み込み<input type="file" accept=".json" onchange="importData(event)" class="hidden"></label>
+    </div>
+  </div>
+</header>
+
+<nav class="bg-white border-b sticky top-0 z-10 shadow-sm no-print">
+  <div class="max-w-7xl mx-auto flex gap-1 px-6 overflow-x-auto">
+    <button class="tab-btn active px-5 py-3 text-sm font-medium border-b-2 border-transparent whitespace-nowrap" onclick="switchTab('overview',this)">概要</button>
+    <button class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-transparent whitespace-nowrap" onclick="switchTab('products',this)">商品マスタ</button>
+    <button class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-transparent whitespace-nowrap" onclick="switchTab('purchases',this)">仕入台帳</button>
+    <button class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-transparent whitespace-nowrap" onclick="switchTab('sales',this)">販売台帳</button>
+    <button class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-transparent whitespace-nowrap" onclick="switchTab('inventory',this)">在庫一覧</button>
+    <button class="tab-btn px-5 py-3 text-sm font-medium border-b-2 border-transparent whitespace-nowrap" onclick="switchTab('monthly',this)">月次損益</button>
+  </div>
+</nav>
+
+<main class="max-w-7xl mx-auto px-6 py-6" id="main"></main>
+
+<footer class="text-center text-xs text-gray-400 py-6 border-t mt-8 bg-white">
+  培養上清液 在庫管理システム — 発生主義会計連動ダッシュボード
+</footer>
+
+<script>
+var data = {
+  products: [
+    { id:"P001", name:"ヒト脂肪由来幹細胞培養上清液", lot:"LOT-2026-001", conc:"原液", grade:"研究用", vol:"10mL" },
+    { id:"P002", name:"ヒト脂肪由来幹細胞培養上清液", lot:"LOT-2026-002", conc:"原液", grade:"臨床グレード", vol:"10mL" },
+    { id:"P003", name:"ヒト脂肪由来幹細胞培養上清液", lot:"LOT-2026-003", conc:"5倍濃縮", grade:"研究用", vol:"50mL" },
+    { id:"P004", name:"ヒト臍帯由来幹細胞培養上清液", lot:"LOT-2026-010", conc:"原液", grade:"研究用", vol:"10mL" },
+    { id:"P005", name:"ヒト臍帯由来幹細胞培養上清液", lot:"LOT-2026-011", conc:"原液", grade:"臨床グレード", vol:"50mL" },
+  ],
+  purchases: [
+    { no:"S001", date:"2026-01-10", pid:"P001", qty:50, unitCost:3000 },
+    { no:"S002", date:"2026-01-15", pid:"P002", qty:30, unitCost:8000 },
+    { no:"S003", date:"2026-02-05", pid:"P003", qty:20, unitCost:5000 },
+    { no:"S004", date:"2026-02-20", pid:"P004", qty:40, unitCost:3500 },
+    { no:"S005", date:"2026-03-01", pid:"P005", qty:25, unitCost:12000 },
+  ],
+  sales: [
+    { no:"H001", date:"2026-01-20", pid:"P001", qty:10, unitPrice:8000 },
+    { no:"H002", date:"2026-01-28", pid:"P002", qty:5, unitPrice:20000 },
+    { no:"H003", date:"2026-02-10", pid:"P001", qty:15, unitPrice:8000 },
+    { no:"H004", date:"2026-02-25", pid:"P003", qty:8, unitPrice:12000 },
+    { no:"H005", date:"2026-03-05", pid:"P004", qty:20, unitPrice:9000 },
+  ]
+};
+
+var fmt = function(v) { return '\u00a5' + Number(v||0).toLocaleString(); };
+var fmtK = function(v) { return v >= 10000 ? '\u00a5' + (v/10000).toFixed(1) + '\u4e07' : fmt(v); };
+var pmFn = function() { var m = {}; data.products.forEach(function(p) { m[p.id] = p; }); return m; };
+
+function getInventory() {
+  return data.products.map(function(p) {
+    var pList = data.purchases.filter(function(x) { return x.pid === p.id; });
+    var totalIn = pList.reduce(function(s,x) { return s + Number(x.qty||0); }, 0);
+    var totalOut = data.sales.filter(function(x) { return x.pid === p.id; }).reduce(function(s,x) { return s + Number(x.qty||0); }, 0);
+    var stock = totalIn - totalOut;
+    var avgCost = pList.length ? pList.reduce(function(s,x) { return s + Number(x.unitCost||0); }, 0) / pList.length : 0;
+    return { id:p.id, name:p.name, lot:p.lot, conc:p.conc, grade:p.grade, vol:p.vol, totalIn:totalIn, totalOut:totalOut, stock:stock, avgCost:avgCost, valuation:stock*avgCost };
+  });
+}
+
+function getMonthly() {
+  var allDates = data.purchases.map(function(x){return x.date;}).concat(data.sales.map(function(x){return x.date;})).filter(Boolean).sort();
+  if (!allDates.length) return [];
+  var monthSet = {};
+  allDates.forEach(function(d) { monthSet[d.slice(0,7).replace('-','/')] = true; });
+  var months = Object.keys(monthSet).sort();
+  var cum = 0;
+  return months.map(function(m) {
+    var mP = data.purchases.filter(function(x) { return x.date && x.date.slice(0,7).replace('-','/') === m; });
+    var mS = data.sales.filter(function(x) { return x.date && x.date.slice(0,7).replace('-','/') === m; });
+    var purchaseAmt = mP.reduce(function(s,x) { return s + Number(x.qty||0)*Number(x.unitCost||0); }, 0);
+    var salesAmt = mS.reduce(function(s,x) { return s + Number(x.qty||0)*Number(x.unitPrice||0); }, 0);
+    var cogs = mS.reduce(function(s,x) {
+      var pl = data.purchases.filter(function(p) { return p.pid === x.pid; });
+      var avg = pl.length ? pl.reduce(function(a,p) { return a + Number(p.unitCost||0); },0)/pl.length : 0;
+      return s + Number(x.qty||0) * avg;
+    }, 0);
+    var profit = salesAmt - cogs;
+    cum += profit;
+    return { month:m, purchaseAmt:purchaseAmt, salesAmt:salesAmt, cogs:cogs, profit:profit, cumProfit:cum, margin: salesAmt ? profit/salesAmt : 0 };
+  });
+}
+
+var currentTab = 'overview';
+var charts = {};
+
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  render();
+}
+
+function render() {
+  Object.keys(charts).forEach(function(k) { charts[k].destroy(); });
+  charts = {};
+  var m = document.getElementById('main');
+  if (currentTab === 'overview') { m.innerHTML = renderOverview(); initCharts(); }
+  else if (currentTab === 'products') { m.innerHTML = renderProducts(); }
+  else if (currentTab === 'purchases') { m.innerHTML = renderPurchases(); }
+  else if (currentTab === 'sales') { m.innerHTML = renderSales(); }
+  else if (currentTab === 'inventory') { m.innerHTML = renderInventory(); initInventoryChart(); }
+  else if (currentTab === 'monthly') { m.innerHTML = renderMonthly(); initMonthlyChart(); }
+}
+
+function card(icon,title,value,sub,color) {
+  return '<div class="bg-white rounded-xl shadow-sm border p-5 hover:shadow-md transition-shadow">' +
+    '<div class="flex items-center gap-2 text-gray-500 text-sm font-medium"><span class="text-lg">'+icon+'</span>'+title+'</div>' +
+    '<div class="text-2xl font-bold mt-1" style="color:'+color+'">'+value+'</div>' +
+    '<div class="text-xs text-gray-400 mt-1">'+sub+'</div></div>';
+}
+
+function renderOverview() {
+  var inv = getInventory();
+  var mon = getMonthly();
+  var totalStock = inv.reduce(function(s,x){return s+x.stock;},0);
+  var totalVal = inv.reduce(function(s,x){return s+x.valuation;},0);
+  var totalSales = mon.reduce(function(s,x){return s+x.salesAmt;},0);
+  var totalProfit = mon.reduce(function(s,x){return s+x.profit;},0);
+  var margin = totalSales ? (totalProfit/totalSales*100).toFixed(1) : '0.0';
+  return '<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">' +
+    card('📦','総在庫数',totalStock+' 本',data.products.length+'規格','#3b82f6') +
+    card('💰','在庫評価額',fmtK(totalVal),'平均仕入原価ベース','#10b981') +
+    card('📈','累計売上高',fmtK(totalSales),'全期間','#f59e0b') +
+    card('✨','累計粗利益',fmtK(totalProfit),'粗利率 '+margin+'%','#8b5cf6') +
+    '</div>' +
+    '<h2 class="text-lg font-bold text-gray-800 mb-3">📊 月次推移（発生主義）</h2>' +
+    '<div class="bg-white rounded-xl shadow-sm border p-5 mb-6" style="height:360px"><canvas id="chartMonthly"></canvas></div>' +
+    '<div class="grid grid-cols-1 md:grid-cols-2 gap-6">' +
+    '<div><h2 class="text-lg font-bold text-gray-800 mb-3">🧪 商品別在庫構成</h2><div class="bg-white rounded-xl shadow-sm border p-5" style="height:300px"><canvas id="chartPie1"></canvas></div></div>' +
+    '<div><h2 class="text-lg font-bold text-gray-800 mb-3">🏷️ グレード別在庫</h2><div class="bg-white rounded-xl shadow-sm border p-5" style="height:300px"><canvas id="chartPie2"></canvas></div></div></div>';
+}
+
+function initCharts() {
+  var mon = getMonthly();
+  var inv = getInventory().filter(function(x){return x.stock>0;});
+  var labels = mon.map(function(m){return m.month;});
+  var colors5 = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+  charts.monthly = new Chart(document.getElementById('chartMonthly'), {
+    type:'bar', data:{ labels:labels, datasets:[
+      { label:'仕入高', data:mon.map(function(m){return m.purchaseAmt;}), backgroundColor:'#93c5fd', order:2 },
+      { label:'売上高', data:mon.map(function(m){return m.salesAmt;}), backgroundColor:'#3b82f6', order:2 },
+      { label:'粗利益', data:mon.map(function(m){return m.profit;}), type:'line', borderColor:'#10b981', borderWidth:3, pointRadius:5, pointBackgroundColor:'#10b981', fill:false, order:1 }
+    ]}, options:{ responsive:true, maintainAspectRatio:false, plugins:{tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fmt(ctx.raw);}}}}, scales:{y:{ticks:{callback:function(v){return fmtK(v);}}}} }
+  });
+  charts.pie1 = new Chart(document.getElementById('chartPie1'), {
+    type:'doughnut', data:{ labels:inv.map(function(x){return x.id;}), datasets:[{data:inv.map(function(x){return x.stock;}), backgroundColor:colors5}] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+  });
+  var gradeData = {};
+  inv.forEach(function(x){ gradeData[x.grade] = (gradeData[x.grade]||0) + x.stock; });
+  charts.pie2 = new Chart(document.getElementById('chartPie2'), {
+    type:'doughnut', data:{ labels:Object.keys(gradeData), datasets:[{data:Object.values(gradeData), backgroundColor:['#3b82f6','#10b981','#f59e0b']}] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+  });
+}
+
+function renderProducts() {
+  var rows = data.products.map(function(p,i) {
+    return '<tr class="'+(i%2?'':'bg-gray-50')+' hover:bg-blue-50">' +
+      '<td class="px-2 py-1"><input value="'+p.id+'" onchange="updP('+i+',\'id\',this.value)"></td>' +
+      '<td class="px-2 py-1"><input value="'+p.name+'" onchange="updP('+i+',\'name\',this.value)"></td>' +
+      '<td class="px-2 py-1"><input value="'+p.lot+'" onchange="updP('+i+',\'lot\',this.value)"></td>' +
+      '<td class="px-2 py-1"><input value="'+p.conc+'" onchange="updP('+i+',\'conc\',this.value)"></td>' +
+      '<td class="px-2 py-1"><input value="'+p.grade+'" onchange="updP('+i+',\'grade\',this.value)"></td>' +
+      '<td class="px-2 py-1"><input value="'+p.vol+'" onchange="updP('+i+',\'vol\',this.value)"></td>' +
+      '<td class="px-2 py-1 text-center"><button onclick="delP('+i+')" class="text-red-400 hover:text-red-600 font-bold">✕</button></td></tr>';
+  }).join('');
+  return '<div class="flex items-center justify-between mb-4"><h2 class="text-lg font-bold text-gray-800">🧪 商品マスタ</h2>' +
+    '<button onclick="addP()" class="btn btn-blue no-print">＋ 商品追加</button></div>' +
+    '<div class="bg-white rounded-xl shadow-sm border overflow-auto"><table class="w-full text-sm"><thead><tr class="bg-blue-700 text-white">' +
+    '<th class="px-3 py-2 text-left">商品ID</th><th class="px-3 py-2 text-left">製品名</th>' +
+    '<th class="px-3 py-2 text-left">ロット番号</th><th class="px-3 py-2 text-left">濃度</th>' +
+    '<th class="px-3 py-2 text-left">グレード</th><th class="px-3 py-2 text-left">容量</th>' +
+    '<th class="px-3 py-2 w-10"></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
+    '<p class="text-xs text-gray-400 mt-2">※ セルをクリックして直接編集できます</p>';
+}
+function updP(i,k,v) { data.products[i][k]=v; }
+function addP() { var n=data.products.length+1; data.products.push({id:'P'+String(n).padStart(3,'0'),name:'',lot:'',conc:'',grade:'研究用',vol:''}); render(); }
+function delP(i) { if(confirm('この商品を削除しますか？')) { data.products.splice(i,1); render(); } }
+
+function renderPurchases() {
+  var pm = pmFn();
+  var opts = data.products.map(function(pr) { return '<option value="'+pr.id+'">'+pr.id+' - '+pr.name.slice(0,10)+'</option>'; }).join('');
+  var rows = data.purchases.map(function(p,i) {
+    var selOpts = data.products.map(function(pr) { return '<option value="'+pr.id+'"'+(pr.id===p.pid?' selected':'')+'>'+pr.id+' - '+pr.name.slice(0,10)+'</option>'; }).join('');
+    return '<tr class="'+(i%2?'':'bg-gray-50')+' hover:bg-blue-50">' +
+      '<td class="px-2 py-1"><input value="'+p.no+'" onchange="updPu('+i+',\'no\',this.value)"></td>' +
+      '<td class="px-2 py-1"><input type="date" value="'+p.date+'" onchange="updPu('+i+',\'date\',this.value)"></td>' +
+      '<td class="px-2 py-1"><select onchange="updPu('+i+',\'pid\',this.value)">'+selOpts+'</select></td>' +
+      '<td class="px-2 py-1 text-gray-500">'+(pm[p.pid]?pm[p.pid].name:'')+'</td>' +
+      '<td class="px-2 py-1"><input type="number" value="'+p.qty+'" onchange="updPu('+i+',\'qty\',+this.value)" class="text-right"></td>' +
+      '<td class="px-2 py-1"><input type="number" value="'+p.unitCost+'" onchange="updPu('+i+',\'unitCost\',+this.value)" class="text-right"></td>' +
+      '<td class="px-2 py-1 text-right font-semibold">'+fmt(p.qty*p.unitCost)+'</td>' +
+      '<td class="px-2 py-1 text-gray-500">'+(p.date?p.date.slice(0,7).replace('-','/'):' ')+'</td>' +
+      '<td class="px-2 py-1 text-center"><button onclick="delPu('+i+')" class="text-red-400 hover:text-red-600 font-bold">✕</button></td></tr>';
+  }).join('');
+  return '<div class="flex items-center justify-between mb-4"><div><h2 class="text-lg font-bold text-gray-800">🔵 仕入台帳</h2>' +
+    '<p class="text-xs text-amber-700 mt-1">💡 発生主義：納品日基準で計上</p></div>' +
+    '<button onclick="addPu()" class="btn btn-blue no-print">＋ 仕入追加</button></div>' +
+    '<div class="bg-white rounded-xl shadow-sm border overflow-auto"><table class="w-full text-sm"><thead><tr class="bg-blue-600 text-white">' +
+    '<th class="px-3 py-2 text-left">仕入No.</th><th class="px-3 py-2 text-left">納品日</th>' +
+    '<th class="px-3 py-2 text-left">商品ID</th><th class="px-3 py-2 text-left">製品名</th>' +
+    '<th class="px-3 py-2 text-right">数量</th><th class="px-3 py-2 text-right">仕入単価</th>' +
+    '<th class="px-3 py-2 text-right">仕入金額</th><th class="px-3 py-2 text-left">計上年月</th>' +
+    '<th class="px-3 py-2 w-10"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function updPu(i,k,v) { data.purchases[i][k]=v; render(); }
+function addPu() { var n=data.purchases.length+1; data.purchases.push({no:'S'+String(n).padStart(3,'0'),date:'',pid:data.products[0]?data.products[0].id:'',qty:0,unitCost:0}); render(); }
+function delPu(i) { if(confirm('この仕入を削除しますか？')) { data.purchases.splice(i,1); render(); } }
+
+function renderSales() {
+  var pm = pmFn();
+  var rows = data.sales.map(function(s,i) {
+    var pl = data.purchases.filter(function(p){return p.pid===s.pid;});
+    var avgCost = pl.length ? pl.reduce(function(a,p){return a+Number(p.unitCost||0);},0)/pl.length : 0;
+    var gross = Number(s.qty||0)*Number(s.unitPrice||0) - Number(s.qty||0)*avgCost;
+    var selOpts = data.products.map(function(pr) { return '<option value="'+pr.id+'"'+(pr.id===s.pid?' selected':'')+'>'+pr.id+' - '+pr.name.slice(0,10)+'</option>'; }).join('');
+    return '<tr class="'+(i%2?'':'bg-gray-50')+' hover:bg-green-50">' +
+      '<td class="px-2 py-1"><input value="'+s.no+'" onchange="updS('+i+',\'no\',this.value)"></td>' +
+      '<td class="px-2 py-1"><input type="date" value="'+s.date+'" onchange="updS('+i+',\'date\',this.value)"></td>' +
+      '<td class="px-2 py-1"><select onchange="updS('+i+',\'pid\',this.value)">'+selOpts+'</select></td>' +
+      '<td class="px-2 py-1 text-gray-500">'+(pm[s.pid]?pm[s.pid].name:'')+'</td>' +
+      '<td class="px-2 py-1"><input type="number" value="'+s.qty+'" onchange="updS('+i+',\'qty\',+this.value)" class="text-right"></td>' +
+      '<td class="px-2 py-1"><input type="number" value="'+s.unitPrice+'" onchange="updS('+i+',\'unitPrice\',+this.value)" class="text-right"></td>' +
+      '<td class="px-2 py-1 text-right font-semibold">'+fmt(s.qty*s.unitPrice)+'</td>' +
+      '<td class="px-2 py-1 text-right" style="color:'+(gross>=0?'#059669':'#dc2626')+'">'+fmt(gross)+'</td>' +
+      '<td class="px-2 py-1 text-gray-500">'+(s.date?s.date.slice(0,7).replace('-','/'):' ')+'</td>' +
+      '<td class="px-2 py-1 text-center"><button onclick="delS('+i+')" class="text-red-400 hover:text-red-600 font-bold">✕</button></td></tr>';
+  }).join('');
+  return '<div class="flex items-center justify-between mb-4"><div><h2 class="text-lg font-bold text-gray-800">🟢 販売台帳</h2>' +
+    '<p class="text-xs text-amber-700 mt-1">💡 発生主義：販売日基準で計上</p></div>' +
+    '<button onclick="addS()" class="btn btn-green no-print">＋ 販売追加</button></div>' +
+    '<div class="bg-white rounded-xl shadow-sm border overflow-auto"><table class="w-full text-sm"><thead><tr class="bg-green-700 text-white">' +
+    '<th class="px-3 py-2 text-left">販売No.</th><th class="px-3 py-2 text-left">販売日</th>' +
+    '<th class="px-3 py-2 text-left">商品ID</th><th class="px-3 py-2 text-left">製品名</th>' +
+    '<th class="px-3 py-2 text-right">数量</th><th class="px-3 py-2 text-right">販売単価</th>' +
+    '<th class="px-3 py-2 text-right">売上金額</th><th class="px-3 py-2 text-right">粗利</th>' +
+    '<th class="px-3 py-2 text-left">計上年月</th><th class="px-3 py-2 w-10"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function updS(i,k,v) { data.sales[i][k]=v; render(); }
+function addS() { var n=data.sales.length+1; data.sales.push({no:'H'+String(n).padStart(3,'0'),date:'',pid:data.products[0]?data.products[0].id:'',qty:0,unitPrice:0}); render(); }
+function delS(i) { if(confirm('この販売を削除しますか？')) { data.sales.splice(i,1); render(); } }
+
+function renderInventory() {
+  var inv = getInventory();
+  var totalStock = inv.reduce(function(s,x){return s+x.stock;},0);
+  var totalVal = inv.reduce(function(s,x){return s+x.valuation;},0);
+  var rows = inv.map(function(item,i) {
+    return '<tr class="'+(i%2?'':'bg-gray-50')+' hover:bg-blue-50">' +
+      '<td class="px-4 py-3 font-mono text-blue-600 font-medium">'+item.id+'</td>' +
+      '<td class="px-4 py-3">'+item.name+'</td>' +
+      '<td class="px-4 py-3">'+item.conc+'</td>' +
+      '<td class="px-4 py-3"><span class="badge '+(item.grade==='臨床グレード'?'badge-green':'badge-blue')+'">'+item.grade+'</span></td>' +
+      '<td class="px-4 py-3 text-right">'+item.totalIn+'</td>' +
+      '<td class="px-4 py-3 text-right">'+item.totalOut+'</td>' +
+      '<td class="px-4 py-3 text-right font-bold">'+item.stock+(item.stock<=10?'<span class="ml-1 text-red-500 text-xs">⚠ 低在庫</span>':'')+'</td>' +
+      '<td class="px-4 py-3 text-right">'+fmt(item.avgCost)+'</td>' +
+      '<td class="px-4 py-3 text-right font-semibold text-green-700">'+fmt(item.valuation)+'</td></tr>';
+  }).join('');
+  return '<h2 class="text-lg font-bold text-gray-800 mb-3">📦 商品別在庫一覧</h2>' +
+    '<div class="bg-white rounded-xl shadow-sm border overflow-auto"><table class="w-full text-sm"><thead><tr class="bg-blue-700 text-white">' +
+    '<th class="px-4 py-3 text-left">商品ID</th><th class="px-4 py-3 text-left">製品名</th>' +
+    '<th class="px-4 py-3 text-left">濃度</th><th class="px-4 py-3 text-left">グレード</th>' +
+    '<th class="px-4 py-3 text-right">累計仕入</th><th class="px-4 py-3 text-right">累計販売</th>' +
+    '<th class="px-4 py-3 text-right">現在庫</th><th class="px-4 py-3 text-right">平均仕入単価</th>' +
+    '<th class="px-4 py-3 text-right">在庫評価額</th></tr></thead><tbody>'+rows+
+    '<tr class="bg-blue-50 border-t-2 border-blue-300 font-bold">' +
+    '<td class="px-4 py-3" colspan="4">合計</td>' +
+    '<td class="px-4 py-3 text-right">'+inv.reduce(function(s,x){return s+x.totalIn;},0)+'</td>' +
+    '<td class="px-4 py-3 text-right">'+inv.reduce(function(s,x){return s+x.totalOut;},0)+'</td>' +
+    '<td class="px-4 py-3 text-right">'+totalStock+'</td>' +
+    '<td class="px-4 py-3 text-right">—</td>' +
+    '<td class="px-4 py-3 text-right text-green-700">'+fmt(totalVal)+'</td></tr></tbody></table></div>' +
+    '<h2 class="text-lg font-bold text-gray-800 mt-8 mb-3">📊 商品別在庫評価額</h2>' +
+    '<div class="bg-white rounded-xl shadow-sm border p-5" style="height:320px"><canvas id="chartInv"></canvas></div>';
+}
+function initInventoryChart() {
+  var inv = getInventory();
+  var colors5 = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+  charts.inv = new Chart(document.getElementById('chartInv'), {
+    type:'bar', data:{ labels:inv.map(function(x){return x.id;}), datasets:[{label:'在庫評価額', data:inv.map(function(x){return x.valuation;}), backgroundColor:colors5}] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{tooltip:{callbacks:{label:function(ctx){return fmt(ctx.raw);}}}}, scales:{x:{ticks:{callback:function(v){return fmtK(v);}}}} }
+  });
+}
+
+function renderMonthly() {
+  var mon = getMonthly();
+  var totP = mon.reduce(function(s,x){return s+x.purchaseAmt;},0);
+  var totS = mon.reduce(function(s,x){return s+x.salesAmt;},0);
+  var totC = mon.reduce(function(s,x){return s+x.cogs;},0);
+  var totPr = mon.reduce(function(s,x){return s+x.profit;},0);
+  var avgM = totS ? (totPr/totS*100).toFixed(1) : '0.0';
+  var rows = mon.map(function(m,i) {
+    return '<tr class="'+(i%2?'':'bg-gray-50')+' hover:bg-red-50">' +
+      '<td class="px-4 py-3 font-medium">'+m.month+'</td>' +
+      '<td class="px-4 py-3 text-right">'+fmt(m.purchaseAmt)+'</td>' +
+      '<td class="px-4 py-3 text-right font-semibold">'+fmt(m.salesAmt)+'</td>' +
+      '<td class="px-4 py-3 text-right">'+fmt(m.cogs)+'</td>' +
+      '<td class="px-4 py-3 text-right font-bold" style="color:'+(m.profit>=0?'#059669':'#dc2626')+'">'+fmt(m.profit)+'</td>' +
+      '<td class="px-4 py-3 text-right">'+(m.margin*100).toFixed(1)+'%</td>' +
+      '<td class="px-4 py-3 text-right font-semibold text-purple-700">'+fmt(m.cumProfit)+'</td></tr>';
+  }).join('');
+  return '<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 mb-4">' +
+    '💡 発生主義に基づき、仕入は<b>納品日</b>、売上は<b>販売日</b>を基準に計上月を判定しています。</div>' +
+    '<h2 class="text-lg font-bold text-gray-800 mb-3">📋 月次損益計算書</h2>' +
+    '<div class="bg-white rounded-xl shadow-sm border overflow-auto"><table class="w-full text-sm"><thead><tr class="bg-red-800 text-white">' +
+    '<th class="px-4 py-3 text-left">計上年月</th><th class="px-4 py-3 text-right">仕入高</th>' +
+    '<th class="px-4 py-3 text-right">売上高</th><th class="px-4 py-3 text-right">売上原価</th>' +
+    '<th class="px-4 py-3 text-right">粗利益</th><th class="px-4 py-3 text-right">粗利率</th>' +
+    '<th class="px-4 py-3 text-right">累計粗利</th></tr></thead><tbody>'+rows+
+    '<tr class="bg-red-50 border-t-2 border-red-300 font-bold">' +
+    '<td class="px-4 py-3">合計</td><td class="px-4 py-3 text-right">'+fmt(totP)+'</td>' +
+    '<td class="px-4 py-3 text-right">'+fmt(totS)+'</td><td class="px-4 py-3 text-right">'+fmt(totC)+'</td>' +
+    '<td class="px-4 py-3 text-right text-green-700">'+fmt(totPr)+'</td>' +
+    '<td class="px-4 py-3 text-right">'+avgM+'%</td>' +
+    '<td class="px-4 py-3 text-right text-purple-700">'+fmt(totPr)+'</td></tr></tbody></table></div>' +
+    '<h2 class="text-lg font-bold text-gray-800 mt-8 mb-3">📈 売上・粗利推移</h2>' +
+    '<div class="bg-white rounded-xl shadow-sm border p-5" style="height:340px"><canvas id="chartPL"></canvas></div>';
+}
+function initMonthlyChart() {
+  var mon = getMonthly();
+  charts.pl = new Chart(document.getElementById('chartPL'), {
+    type:'bar', data:{ labels:mon.map(function(m){return m.month;}), datasets:[
+      { label:'売上高', data:mon.map(function(m){return m.salesAmt;}), backgroundColor:'#3b82f6', order:2 },
+      { label:'粗利益', data:mon.map(function(m){return m.profit;}), backgroundColor:'#10b981', order:2 },
+      { label:'粗利率', data:mon.map(function(m){return m.margin;}), type:'line', borderColor:'#f59e0b', borderWidth:3, pointRadius:5, pointBackgroundColor:'#f59e0b', fill:false, yAxisID:'y1', order:1 }
+    ]}, options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{tooltip:{callbacks:{label:function(ctx){ return ctx.dataset.yAxisID==='y1' ? ctx.dataset.label+': '+(ctx.raw*100).toFixed(1)+'%' : ctx.dataset.label+': '+fmt(ctx.raw); }}}},
+      scales:{ y:{ticks:{callback:function(v){return fmtK(v);}}}, y1:{position:'right', ticks:{callback:function(v){return (v*100).toFixed(0)+'%';}}, grid:{display:false}} }
+    }
+  });
+}
+
+function exportData() {
+  var blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = '培養上清液_データ_' + new Date().toISOString().slice(0,10) + '.json'; a.click();
+}
+function importData(e) {
+  var file = e.target.files[0]; if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      var imported = JSON.parse(ev.target.result);
+      if (imported.products && imported.purchases && imported.sales) { data = imported; render(); alert('データを読み込みました！'); }
+      else { alert('不正なファイル形式です。'); }
+    } catch(err) { alert('読み込み失敗: ' + err.message); }
+  };
+  reader.readAsText(file); e.target.value = '';
+}
+
+render();
+</script>
+</body>
 </html>
